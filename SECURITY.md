@@ -10,6 +10,9 @@
 - It does not modify Omarchy themes, wallpaper links, Hyprland configuration,
   or shell configuration.
 - It opens one owner-scoped runtime lock and launches one `mpvpaper` child.
+- When a startup transition is enabled, it writes one owner-only Lua helper to
+  the user's runtime directory. The helper contains fixed bundled code, removes
+  the temporary mpv filter after the reveal, and is deleted when playback ends.
 - Local media paths are passed directly to the local player and are not
   uploaded or transmitted.
 - HTTP(S) sources require network access. mpv and `yt-dlp` resolve and retrieve

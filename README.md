@@ -103,7 +103,8 @@ The player stays attached to the terminal. Press `Ctrl-C` to stop it and reveal
 the unchanged Omarchy background.
 
 By default the source loops, covers all displays, crops to fill, retains audio
-at 100%, uses hardware decoding when available, and caps web video at 1080p.
+at 100%, fades in over the existing background, uses hardware decoding when
+available, and caps web video at 1080p.
 
 Disable audio or looping with the friendly toggles:
 
@@ -114,6 +115,37 @@ Disable audio or looping with the friendly toggles:
 `--no-audio` is equivalent to `--mute`, `--unmute` is equivalent to `--audio`,
 and the existing `--once` option is equivalent to `--no-loop`. Explicit audio
 and loop flags are useful when building commands dynamically.
+
+## Transitions
+
+The default `fade` begins when the first decoded video frame is ready, not when
+the process starts. Until then mpvpaper stays transparent and the real Omarchy
+background remains visible underneath. The theme, background link, and image
+are never replaced or copied.
+
+```bash
+# Match Omarchy's center-out background reveal
+./omarchy-motion --transition omarchy ~/Videos/ambient.mp4
+
+# A slower granular reveal
+./omarchy-motion --transition dissolve --transition-duration 1.2 ~/Videos/ambient.mp4
+
+# A blocky reveal with immediate audio
+./omarchy-motion --transition pixelize --no-audio-fade ~/Videos/ambient.mp4
+
+# Preserve the original instant startup behavior
+./omarchy-motion --no-transition ~/Videos/ambient.mp4
+```
+
+Available transition types are `none`, `fade`, `omarchy`, `circle`,
+`dissolve`, `pixelize`, and `blur`. `--fade-in` is a convenient alias for
+`--transition fade`; `--no-transition` selects `none`. Durations may be greater
+than zero and up to 60 seconds.
+
+Audio fades in over the same duration by default. Use `--no-audio-fade` to
+start it immediately. After the reveal, the temporary transition graph removes
+itself and the video returns to its normal hardware-decoded path. This also
+prevents the transition from replaying when a video loops.
 
 Dim toward black with `--dim`:
 
@@ -147,6 +179,15 @@ Options:
       --dim PERCENT       Overlay opacity, 0-100 (default: 0)
       --dim-color MODE    Dim toward black or theme (default: black)
       --quality HEIGHT    Maximum web-video height; 0 disables cap (default: 1080)
+      --transition TYPE   none, fade, omarchy, circle, dissolve, pixelize, or blur
+                          (default: fade)
+      --transition-duration SECONDS
+                          Transition length, greater than 0 and at most 60
+                          (default: 0.8)
+      --fade-in           Alias for --transition fade
+      --no-transition     Disable the startup transition
+      --audio-fade        Fade audio in with the transition (default)
+      --no-audio-fade     Start audio immediately
       --loop              Loop playback (default)
       --no-loop, --once   Play once instead of looping
       --dry-run           Print the mpvpaper command without starting it
@@ -165,6 +206,9 @@ Examples:
 
 # Fit the whole video, mute it, and play it once
 ./omarchy-motion --contain --mute --no-loop ~/Videos/ambient.mp4
+
+# Reveal from the center over 1.2 seconds
+./omarchy-motion --transition omarchy --transition-duration 1.2 ~/Videos/ambient.mp4
 
 # Dim 45% toward the active theme's solid base color
 ./omarchy-motion --dim 45 --dim-color theme ~/Videos/ambient.mp4
@@ -185,6 +229,8 @@ Use `mpvpaper --help-output` to list the available output names.
 - YouTube playback depends on the network and `yt-dlp`. Private, restricted, or
   authenticated videos may not work without additional mpv/yt-dlp setup.
 - A continuously decoding video uses more power than a static background.
+- Startup transitions briefly use copy-back decoding so FFmpeg can construct
+  the alpha reveal. The temporary transition filter is removed afterward.
 - This app is manually started and does not install an autostart entry.
 
 ## Security and privacy

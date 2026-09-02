@@ -3,7 +3,7 @@
 set -uo pipefail
 
 PROGRAM_NAME="${0##*/}"
-PROGRAM_VERSION="1.1.0"
+PROGRAM_VERSION="1.2.0"
 
 usage() {
   cat <<EOF
@@ -26,6 +26,15 @@ Options:
       --dim PERCENT       Overlay opacity, 0-100 (default: 0)
       --dim-color MODE    Dim toward black or theme (default: black)
       --quality HEIGHT    Maximum web-video height; 0 disables cap (default: 1080)
+      --transition TYPE   none, fade, omarchy, circle, dissolve, pixelize, or blur
+                          (default: fade)
+      --transition-duration SECONDS
+                          Transition length, greater than 0 and at most 60
+                          (default: 0.8)
+      --fade-in           Alias for --transition fade
+      --no-transition     Disable the startup transition
+      --audio-fade        Fade audio in with the transition (default)
+      --no-audio-fade     Start audio immediately
       --loop              Loop playback (default)
       --no-loop, --once   Play once instead of looping
       --dry-run           Print the mpvpaper command without starting it
@@ -36,6 +45,7 @@ Examples:
   $PROGRAM_NAME ~/Videos/ambient.mp4
   $PROGRAM_NAME 'https://www.youtube.com/watch?v=VIDEO_ID'
   $PROGRAM_NAME --mute --no-loop video.mp4
+  $PROGRAM_NAME --transition omarchy --transition-duration 1.2 video.mp4
   $PROGRAM_NAME --dim 35 --dim-color theme video.mp4
   $PROGRAM_NAME --output DP-1 --fit contain --volume 60 video.mp4
 
@@ -54,6 +64,51 @@ require_command() {
 
 is_integer() {
   [[ "$1" =~ ^[0-9]+$ ]]
+}
+
+is_transition_duration() {
+  local value="$1"
+  local whole fraction
+
+  [[ "$value" =~ ^([0-9]+)(\.([0-9]+))?$ ]] || return 1
+  whole=$((10#${BASH_REMATCH[1]}))
+  fraction="${BASH_REMATCH[3]:-}"
+
+  [[ "$value" =~ [1-9] ]] || return 1
+  ((whole < 60)) && return 0
+  ((whole == 60)) && [[ -z "$fraction" || ! "$fraction" =~ [1-9] ]]
+}
+
+write_transition_cleanup_script() {
+  local path="$1"
+
+  (
+    umask 077
+    set -o noclobber
+    cat >"$path" <<'LUA'
+local mp = require "mp"
+
+local duration = tonumber(os.getenv("OMARCHY_MOTION_TRANSITION_DURATION")) or 0.8
+local final_vf = os.getenv("OMARCHY_MOTION_TRANSITION_FINAL_VF") or ""
+local clear_audio_fade = os.getenv("OMARCHY_MOTION_TRANSITION_CLEAR_AF") == "true"
+local armed = false
+local finished = false
+
+local function finish_transition()
+  if finished then return end
+  finished = true
+
+  mp.set_property("vf", final_vf)
+  if clear_audio_fade then mp.set_property("af", "") end
+end
+
+mp.register_event("playback-restart", function()
+  if armed or finished then return end
+  armed = true
+  mp.add_timeout(duration + 0.05, finish_transition)
+end)
+LUA
+  )
 }
 
 theme_background_color() {
@@ -80,6 +135,9 @@ audio_mode="auto"
 dim="0"
 dim_color="black"
 quality="1080"
+transition="fade"
+transition_duration="0.8"
+audio_fade="true"
 loop="true"
 dry_run="false"
 source_args=()
@@ -131,6 +189,32 @@ while (($# > 0)); do
       (($# >= 2)) || fail "$1 requires a value"
       quality="$2"
       shift 2
+      ;;
+    --transition)
+      (($# >= 2)) || fail "$1 requires a value"
+      transition="$2"
+      shift 2
+      ;;
+    --transition-duration)
+      (($# >= 2)) || fail "$1 requires a value"
+      transition_duration="$2"
+      shift 2
+      ;;
+    --fade-in)
+      transition="fade"
+      shift
+      ;;
+    --no-transition)
+      transition="none"
+      shift
+      ;;
+    --audio-fade)
+      audio_fade="true"
+      shift
+      ;;
+    --no-audio-fade)
+      audio_fade="false"
+      shift
       ;;
     --loop)
       loop="true"
@@ -201,6 +285,14 @@ esac
 is_integer "$quality" || fail "--quality must be a non-negative integer"
 quality=$((10#$quality))
 
+case "$transition" in
+  none|fade|omarchy|circle|dissolve|pixelize|blur) ;;
+  *) fail "--transition must be one of: none, fade, omarchy, circle, dissolve, pixelize, blur" ;;
+esac
+
+is_transition_duration "$transition_duration" || \
+  fail "--transition-duration must be greater than 0 and at most 60 seconds"
+
 require_command mpvpaper
 require_command flock
 
@@ -213,10 +305,10 @@ else
 fi
 
 hwdec_mode="auto-safe"
-if ((dim > 0)); then
-  # FFmpeg's drawbox filter needs system-memory frames. Copy-back decoding keeps
-  # hardware decode enabled for formats such as YouTube AV1 while making those
-  # frames available to the dimming filter.
+if ((dim > 0)) || [[ "$transition" != "none" ]]; then
+  # FFmpeg's drawbox and transition filters need system-memory frames.
+  # Copy-back keeps hardware decoding enabled for formats such as YouTube AV1
+  # while making those frames available to the filters.
   hwdec_mode="auto-copy-safe"
 fi
 
@@ -229,6 +321,7 @@ mpv_options=(
   "volume=$volume"
 )
 
+dim_filter=""
 if ((dim > 0)); then
   if [[ "$dim_color" == "theme" ]]; then
     overlay_color="$(theme_background_color)" || exit $?
@@ -242,7 +335,45 @@ if ((dim > 0)); then
   else
     printf -v overlay_alpha '0.%02d' "$dim"
   fi
-  mpv_options+=("vf=lavfi=[drawbox=color=${overlay_color}@${overlay_alpha}:t=fill]")
+  dim_filter="lavfi=[drawbox=color=${overlay_color}@${overlay_alpha}:t=fill]"
+fi
+
+runtime_dir="${XDG_RUNTIME_DIR:-/tmp}"
+transition_script=""
+final_vf=""
+clear_audio_fade="false"
+
+if [[ "$transition" == "none" ]]; then
+  [[ -z "$dim_filter" ]] || mpv_options+=("vf=$dim_filter")
+else
+  case "$transition" in
+    fade) transition_filter="fade" ;;
+    omarchy) transition_filter="vertopen" ;;
+    circle) transition_filter="circleopen" ;;
+    dissolve) transition_filter="dissolve" ;;
+    pixelize) transition_filter="pixelize" ;;
+    blur) transition_filter="hblur" ;;
+  esac
+
+  live_filter="format=rgba"
+  if [[ -n "$dim_filter" ]]; then
+    live_filter+=",${dim_filter#lavfi=[}"
+    live_filter="${live_filter%]}"
+    final_vf="$dim_filter"
+  fi
+
+  transition_graph="${live_filter},split=2[clear][live];[clear]lutrgb=a=0[transparent];[transparent][live]xfade=transition=${transition_filter}:duration=${transition_duration}:offset=0"
+  transition_script="$runtime_dir/omarchy-motion-transition-${UID}-$$-${RANDOM}.lua"
+  mpv_options+=(
+    "background=none"
+    "vf=lavfi=[$transition_graph]"
+    "script=$transition_script"
+  )
+
+  if [[ "$audio_mode" == "auto" && "$audio_fade" == "true" ]]; then
+    mpv_options+=("af=lavfi=[afade=t=in:st=0:d=${transition_duration}]")
+    clear_audio_fade="true"
+  fi
 fi
 
 if [[ "$loop" == "true" ]]; then
@@ -272,12 +403,17 @@ fi
 
 [[ -n "${WAYLAND_DISPLAY:-}" ]] || fail "WAYLAND_DISPLAY is not set; run inside the Omarchy desktop session"
 
-runtime_dir="${XDG_RUNTIME_DIR:-/tmp}"
 lock_file="$runtime_dir/omarchy-motion-${UID}.lock"
 exec {lock_fd}>"$lock_file" || fail "could not open runtime lock: $lock_file"
 flock -n "$lock_fd" || fail "another omarchy-motion instance is already running"
 
 child_pid=""
+
+cleanup_transition_script() {
+  if [[ -n "$transition_script" && -e "$transition_script" ]]; then
+    rm -f -- "$transition_script"
+  fi
+}
 
 cleanup_child() {
   if [[ -n "$child_pid" ]] && kill -0 "$child_pid" 2>/dev/null; then
@@ -286,7 +422,22 @@ cleanup_child() {
   fi
 }
 
-trap cleanup_child EXIT
+cleanup() {
+  cleanup_child
+  cleanup_transition_script
+}
+
+if [[ "$transition" != "none" ]]; then
+  write_transition_cleanup_script "$transition_script" || {
+    cleanup_transition_script
+    fail "could not create transition helper: $transition_script"
+  }
+  export OMARCHY_MOTION_TRANSITION_DURATION="$transition_duration"
+  export OMARCHY_MOTION_TRANSITION_FINAL_VF="$final_vf"
+  export OMARCHY_MOTION_TRANSITION_CLEAR_AF="$clear_audio_fade"
+fi
+
+trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 trap 'exit 129' HUP
@@ -296,6 +447,8 @@ child_pid=$!
 wait "$child_pid"
 status=$?
 child_pid=""
+
+cleanup_transition_script
 
 trap - INT TERM HUP EXIT
 exit "$status"
