@@ -3,7 +3,7 @@
 set -uo pipefail
 
 PROGRAM_NAME="${0##*/}"
-PROGRAM_VERSION="1.0.0"
+PROGRAM_VERSION="1.1.0"
 
 usage() {
   cat <<EOF
@@ -16,13 +16,18 @@ Arguments:
   SOURCE                  Local media path or an http(s) URL
 
 Options:
-  -o, --output OUTPUT     Display to cover (default: ALL)
+  -o, --output OUTPUT     Display to cover (default: ALL; alias: --display)
       --fit MODE          cover or contain (default: cover)
+      --cover             Fill the display, cropping as needed
+      --contain           Fit the whole video without cropping
   -v, --volume PERCENT    Playback volume, 0-100 (default: 100)
+      --audio, --unmute   Enable audio (default)
+      --no-audio, --mute  Disable audio
       --dim PERCENT       Overlay opacity, 0-100 (default: 0)
       --dim-color MODE    Dim toward black or theme (default: black)
       --quality HEIGHT    Maximum web-video height; 0 disables cap (default: 1080)
-      --once              Play once instead of looping
+      --loop              Loop playback (default)
+      --no-loop, --once   Play once instead of looping
       --dry-run           Print the mpvpaper command without starting it
       --version           Show the program version
   -h, --help              Show this help
@@ -30,6 +35,7 @@ Options:
 Examples:
   $PROGRAM_NAME ~/Videos/ambient.mp4
   $PROGRAM_NAME 'https://www.youtube.com/watch?v=VIDEO_ID'
+  $PROGRAM_NAME --mute --no-loop video.mp4
   $PROGRAM_NAME --dim 35 --dim-color theme video.mp4
   $PROGRAM_NAME --output DP-1 --fit contain --volume 60 video.mp4
 
@@ -70,6 +76,7 @@ theme_background_color() {
 output="ALL"
 fit_mode="cover"
 volume="100"
+audio_mode="auto"
 dim="0"
 dim_color="black"
 quality="1080"
@@ -79,7 +86,7 @@ source_args=()
 
 while (($# > 0)); do
   case "$1" in
-    -o|--output)
+    -o|--output|--display)
       (($# >= 2)) || fail "$1 requires a value"
       output="$2"
       shift 2
@@ -89,10 +96,26 @@ while (($# > 0)); do
       fit_mode="$2"
       shift 2
       ;;
+    --cover)
+      fit_mode="cover"
+      shift
+      ;;
+    --contain)
+      fit_mode="contain"
+      shift
+      ;;
     -v|--volume)
       (($# >= 2)) || fail "$1 requires a value"
       volume="$2"
       shift 2
+      ;;
+    --audio|--unmute)
+      audio_mode="auto"
+      shift
+      ;;
+    --no-audio|--mute)
+      audio_mode="no"
+      shift
       ;;
     --dim)
       (($# >= 2)) || fail "$1 requires a value"
@@ -109,7 +132,11 @@ while (($# > 0)); do
       quality="$2"
       shift 2
       ;;
-    --once)
+    --loop)
+      loop="true"
+      shift
+      ;;
+    --once|--no-loop)
       loop="false"
       shift
       ;;
@@ -194,7 +221,7 @@ if ((dim > 0)); then
 fi
 
 mpv_options=(
-  "audio=auto"
+  "audio=$audio_mode"
   "hwdec=$hwdec_mode"
   "osc=no"
   "input-default-bindings=no"

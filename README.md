@@ -105,6 +105,16 @@ the unchanged Omarchy background.
 By default the source loops, covers all displays, crops to fill, retains audio
 at 100%, uses hardware decoding when available, and caps web video at 1080p.
 
+Disable audio or looping with the friendly toggles:
+
+```bash
+./omarchy-motion --mute --no-loop ~/Videos/ambient.mp4
+```
+
+`--no-audio` is equivalent to `--mute`, `--unmute` is equivalent to `--audio`,
+and the existing `--once` option is equivalent to `--no-loop`. Explicit audio
+and loop flags are useful when building commands dynamically.
+
 Dim toward black with `--dim`:
 
 ```bash
@@ -127,13 +137,18 @@ formats such as AV1.
 Usage: omarchy-motion [OPTIONS] SOURCE
 
 Options:
-  -o, --output OUTPUT     Display to cover (default: ALL)
+  -o, --output OUTPUT     Display to cover (default: ALL; alias: --display)
       --fit MODE          cover or contain (default: cover)
+      --cover             Fill the display, cropping as needed
+      --contain           Fit the whole video without cropping
   -v, --volume PERCENT    Playback volume, 0-100 (default: 100)
+      --audio, --unmute   Enable audio (default)
+      --no-audio, --mute  Disable audio
       --dim PERCENT       Overlay opacity, 0-100 (default: 0)
       --dim-color MODE    Dim toward black or theme (default: black)
       --quality HEIGHT    Maximum web-video height; 0 disables cap (default: 1080)
-      --once              Play once instead of looping
+      --loop              Loop playback (default)
+      --no-loop, --once   Play once instead of looping
       --dry-run           Print the mpvpaper command without starting it
       --version           Show the program version
   -h, --help              Show help
@@ -146,7 +161,10 @@ Examples:
 ./omarchy-motion --fit contain --volume 60 ~/Videos/film.mp4
 
 # Cover one display
-./omarchy-motion --output DP-1 ~/Videos/ambient.mp4
+./omarchy-motion --display DP-1 ~/Videos/ambient.mp4
+
+# Fit the whole video, mute it, and play it once
+./omarchy-motion --contain --mute --no-loop ~/Videos/ambient.mp4
 
 # Dim 45% toward the active theme's solid base color
 ./omarchy-motion --dim 45 --dim-color theme ~/Videos/ambient.mp4

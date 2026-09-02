@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0 - 2026-09-01
+
+- Add explicit `--audio` / `--no-audio` and `--loop` / `--no-loop` toggles.
+- Retain `--once` and add `--mute` and `--unmute` as friendly aliases.
+- Add `--display`, `--cover`, and `--contain` convenience aliases.
+
 ## 1.0.0 - 2026-09-01
 
 - Play local files and web videos as a chrome-free Omarchy wallpaper with

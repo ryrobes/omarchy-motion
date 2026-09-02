@@ -51,7 +51,7 @@ media_file="$tmp_dir/video with spaces.mp4"
 touch "$media_file"
 
 output="$($app --version)"
-assert_contains "reports the packaged version" "$output" "omarchy-motion 1.0.0"
+assert_contains "reports the packaged version" "$output" "omarchy-motion 1.1.0"
 
 output="$($app --dry-run "$media_file")"
 assert_contains "uses the bottom layer" "$output" "--layer bottom"
@@ -75,6 +75,21 @@ if [[ "$output" != *"loop-file=inf"* ]]; then
 else
   fail "once mode disables looping"
 fi
+
+output="$($app --dry-run --mute --no-loop --display HDMI-A-1 --contain "$media_file")"
+assert_contains "mute alias disables audio" "$output" "audio=no"
+assert_contains "display alias selects an output" "$output" "HDMI-A-1"
+assert_contains "contain alias does not crop" "$output" "panscan=0.0"
+if [[ "$output" != *"loop-file=inf"* ]]; then
+  pass "no-loop alias disables looping"
+else
+  fail "no-loop alias disables looping"
+fi
+
+output="$($app --dry-run --no-audio --unmute --once --loop --cover "$media_file")"
+assert_contains "unmute alias can re-enable audio" "$output" "audio=auto"
+assert_contains "cover alias fills the display" "$output" "panscan=1.0"
+assert_contains "loop flag can re-enable looping" "$output" "loop-file=inf"
 
 output="$($app --dry-run --volume 08 "$media_file")"
 assert_contains "accepts decimal values with a leading zero" "$output" "volume=8"
