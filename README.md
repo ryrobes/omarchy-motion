@@ -17,19 +17,41 @@ Until `omarchy-motion` can be uploaded to the AUR, install it directly from
 this repository. `yay` resolves the dependencies, builds the checked-in
 `PKGBUILD`, and installs the resulting package through pacman:
 
+#### Option 1: keep a local clone
+
 ```bash
 git clone https://github.com/ryrobes/omarchy-motion.git
 cd omarchy-motion
 yay -Bi packaging/aur
 ```
 
-To update later, pull the latest packaging metadata and build it again:
+To update this installation later, pull the latest packaging metadata and
+build it again:
 
 ```bash
 cd omarchy-motion
 git pull --ff-only
 yay -Bi packaging/aur
 ```
+
+#### Option 2: temporary one-shot build
+
+If you do not want to keep a clone, this performs the same build in a temporary
+directory and removes that directory afterward:
+
+```bash
+(
+  dir="$(mktemp -d)"
+  trap 'rm -rf -- "$dir"' EXIT
+
+  git clone --depth=1 https://github.com/ryrobes/omarchy-motion.git "$dir"
+  yay -Bi "$dir/packaging/aur"
+)
+```
+
+The subshell keeps the temporary variable and cleanup trap isolated from your
+terminal. The commands are written out explicitly so they can be inspected
+before running; this is not a remote `curl | bash` installer.
 
 This is still a normal tracked Arch package: inspect it with `pacman -Qi
 omarchy-motion` and remove it with `omarchy pkg drop omarchy-motion`.
