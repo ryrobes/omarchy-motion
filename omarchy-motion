@@ -1,0 +1,274 @@
+#!/usr/bin/env bash
+
+set -uo pipefail
+
+PROGRAM_NAME="${0##*/}"
+PROGRAM_VERSION="1.0.0"
+
+usage() {
+  cat <<EOF
+Usage: $PROGRAM_NAME [OPTIONS] SOURCE
+
+Play a local video or web video as a chrome-free Omarchy wallpaper, with audio.
+The existing Omarchy theme and static background are not changed.
+
+Arguments:
+  SOURCE                  Local media path or an http(s) URL
+
+Options:
+  -o, --output OUTPUT     Display to cover (default: ALL)
+      --fit MODE          cover or contain (default: cover)
+  -v, --volume PERCENT    Playback volume, 0-100 (default: 100)
+      --dim PERCENT       Overlay opacity, 0-100 (default: 0)
+      --dim-color MODE    Dim toward black or theme (default: black)
+      --quality HEIGHT    Maximum web-video height; 0 disables cap (default: 1080)
+      --once              Play once instead of looping
+      --dry-run           Print the mpvpaper command without starting it
+      --version           Show the program version
+  -h, --help              Show this help
+
+Examples:
+  $PROGRAM_NAME ~/Videos/ambient.mp4
+  $PROGRAM_NAME 'https://www.youtube.com/watch?v=VIDEO_ID'
+  $PROGRAM_NAME --dim 35 --dim-color theme video.mp4
+  $PROGRAM_NAME --output DP-1 --fit contain --volume 60 video.mp4
+
+Press Ctrl-C to stop and reveal the existing Omarchy background.
+EOF
+}
+
+fail() {
+  printf '%s: %s\n' "$PROGRAM_NAME" "$*" >&2
+  exit 1
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || fail "required command not found: $1"
+}
+
+is_integer() {
+  [[ "$1" =~ ^[0-9]+$ ]]
+}
+
+theme_background_color() {
+  local colors_file="${OMARCHY_MOTION_THEME_COLORS:-$HOME/.local/state/omarchy/current/theme/colors.toml}"
+  local color
+
+  [[ -r "$colors_file" ]] || fail "could not read the current theme colors: $colors_file"
+  color="$(
+    sed -nE \
+      -e 's/^[[:space:]]*background[[:space:]]*=[[:space:]]*"(#[0-9A-Fa-f]{6})".*$/\1/p' \
+      -e "s/^[[:space:]]*background[[:space:]]*=[[:space:]]*'(#[0-9A-Fa-f]{6})'.*$/\\1/p" \
+      "$colors_file" | head -n 1
+  )"
+  [[ "$color" =~ ^#[0-9A-Fa-f]{6}$ ]] || \
+    fail "current theme has no valid #RRGGBB background color: $colors_file"
+
+  printf '%s' "$color"
+}
+
+output="ALL"
+fit_mode="cover"
+volume="100"
+dim="0"
+dim_color="black"
+quality="1080"
+loop="true"
+dry_run="false"
+source_args=()
+
+while (($# > 0)); do
+  case "$1" in
+    -o|--output)
+      (($# >= 2)) || fail "$1 requires a value"
+      output="$2"
+      shift 2
+      ;;
+    --fit)
+      (($# >= 2)) || fail "$1 requires a value"
+      fit_mode="$2"
+      shift 2
+      ;;
+    -v|--volume)
+      (($# >= 2)) || fail "$1 requires a value"
+      volume="$2"
+      shift 2
+      ;;
+    --dim)
+      (($# >= 2)) || fail "$1 requires a value"
+      dim="$2"
+      shift 2
+      ;;
+    --dim-color)
+      (($# >= 2)) || fail "$1 requires a value"
+      dim_color="$2"
+      shift 2
+      ;;
+    --quality)
+      (($# >= 2)) || fail "$1 requires a value"
+      quality="$2"
+      shift 2
+      ;;
+    --once)
+      loop="false"
+      shift
+      ;;
+    --dry-run)
+      dry_run="true"
+      shift
+      ;;
+    --version)
+      printf '%s %s\n' "$PROGRAM_NAME" "$PROGRAM_VERSION"
+      exit 0
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      while (($# > 0)); do
+        source_args+=("$1")
+        shift
+      done
+      break
+      ;;
+    -*)
+      fail "unknown option: $1"
+      ;;
+    *)
+      source_args+=("$1")
+      shift
+      ;;
+  esac
+done
+
+((${#source_args[@]} == 1)) || {
+  usage >&2
+  exit 2
+}
+
+source_arg="${source_args[0]}"
+
+case "$fit_mode" in
+  cover) panscan="1.0" ;;
+  contain) panscan="0.0" ;;
+  *) fail "--fit must be 'cover' or 'contain'" ;;
+esac
+
+[[ -n "$output" ]] || fail "--output must not be empty"
+
+is_integer "$volume" || fail "--volume must be an integer from 0 to 100"
+volume=$((10#$volume))
+((volume >= 0 && volume <= 100)) || fail "--volume must be an integer from 0 to 100"
+
+is_integer "$dim" || fail "--dim must be an integer from 0 to 100"
+dim=$((10#$dim))
+((dim >= 0 && dim <= 100)) || fail "--dim must be an integer from 0 to 100"
+
+case "$dim_color" in
+  black|theme) ;;
+  *) fail "--dim-color must be 'black' or 'theme'" ;;
+esac
+
+is_integer "$quality" || fail "--quality must be a non-negative integer"
+quality=$((10#$quality))
+
+require_command mpvpaper
+require_command flock
+
+if [[ "$source_arg" =~ ^https?:// ]]; then
+  source="$source_arg"
+  require_command yt-dlp
+else
+  [[ -f "$source_arg" ]] || fail "local media file not found: $source_arg"
+  source="$(realpath -- "$source_arg")" || fail "could not resolve local media path: $source_arg"
+fi
+
+hwdec_mode="auto-safe"
+if ((dim > 0)); then
+  # FFmpeg's drawbox filter needs system-memory frames. Copy-back decoding keeps
+  # hardware decode enabled for formats such as YouTube AV1 while making those
+  # frames available to the dimming filter.
+  hwdec_mode="auto-copy-safe"
+fi
+
+mpv_options=(
+  "audio=auto"
+  "hwdec=$hwdec_mode"
+  "osc=no"
+  "input-default-bindings=no"
+  "panscan=$panscan"
+  "volume=$volume"
+)
+
+if ((dim > 0)); then
+  if [[ "$dim_color" == "theme" ]]; then
+    overlay_color="$(theme_background_color)" || exit $?
+    overlay_color="0x${overlay_color#\#}"
+  else
+    overlay_color="0x000000"
+  fi
+
+  if ((dim == 100)); then
+    overlay_alpha="1.0"
+  else
+    printf -v overlay_alpha '0.%02d' "$dim"
+  fi
+  mpv_options+=("vf=lavfi=[drawbox=color=${overlay_color}@${overlay_alpha}:t=fill]")
+fi
+
+if [[ "$loop" == "true" ]]; then
+  mpv_options+=("loop-file=inf")
+fi
+
+if [[ "$source" =~ ^https?:// ]] && ((quality > 0)); then
+  mpv_options+=("ytdl-format=bestvideo[height<=${quality}]+bestaudio/best[height<=${quality}]")
+fi
+
+printf -v mpv_options_string '%s ' "${mpv_options[@]}"
+mpv_options_string="${mpv_options_string% }"
+
+command=(
+  mpvpaper
+  --layer bottom
+  --mpv-options "$mpv_options_string"
+  "$output"
+  "$source"
+)
+
+if [[ "$dry_run" == "true" ]]; then
+  printf '%q ' "${command[@]}"
+  printf '\n'
+  exit 0
+fi
+
+[[ -n "${WAYLAND_DISPLAY:-}" ]] || fail "WAYLAND_DISPLAY is not set; run inside the Omarchy desktop session"
+
+runtime_dir="${XDG_RUNTIME_DIR:-/tmp}"
+lock_file="$runtime_dir/omarchy-motion-${UID}.lock"
+exec {lock_fd}>"$lock_file" || fail "could not open runtime lock: $lock_file"
+flock -n "$lock_fd" || fail "another omarchy-motion instance is already running"
+
+child_pid=""
+
+cleanup_child() {
+  if [[ -n "$child_pid" ]] && kill -0 "$child_pid" 2>/dev/null; then
+    kill -TERM "$child_pid" 2>/dev/null || true
+    wait "$child_pid" 2>/dev/null || true
+  fi
+}
+
+trap cleanup_child EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+
+"${command[@]}" &
+child_pid=$!
+wait "$child_pid"
+status=$?
+child_pid=""
+
+trap - INT TERM HUP EXIT
+exit "$status"
