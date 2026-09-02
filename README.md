@@ -231,6 +231,9 @@ Use `mpvpaper --help-output` to list the available output names.
 - A continuously decoding video uses more power than a static background.
 - Startup transitions briefly use copy-back decoding so FFmpeg can construct
   the alpha reveal. The temporary transition filter is removed afterward.
+- Local H.264 4:2:2, 4:4:4, and high-bit-depth files are decoded in software
+  from the start. Most hardware decoders do not support those profiles; this
+  avoids harmless Vulkan/CUDA fallback errors without hiding real failures.
 - This app is manually started and does not install an autostart entry.
 
 ## Security and privacy

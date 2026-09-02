@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.1 - 2026-09-01
+
+- Detect local H.264 files outside the hardware-friendly 8-bit 4:2:0 formats
+  and select software decoding immediately, avoiding noisy Vulkan/CUDA probe
+  failures before mpv's otherwise successful fallback.
+
 ## 1.2.0 - 2026-09-01
 
 - Reveal video over the unchanged Omarchy background with transparent startup

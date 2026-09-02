@@ -65,7 +65,7 @@ media_file="$tmp_dir/video with spaces.mp4"
 touch "$media_file"
 
 output="$($app --version)"
-assert_contains "reports the packaged version" "$output" "omarchy-motion 1.2.0"
+assert_contains "reports the packaged version" "$output" "omarchy-motion 1.2.1"
 
 output="$($app --dry-run "$media_file")"
 assert_contains "uses the bottom layer" "$output" "--layer bottom"
@@ -131,6 +131,26 @@ assert_contains "blur transition uses horizontal blur" "$output" "transition=hbl
 
 output="$($app --dry-run --fade-in "$media_file")"
 assert_contains "fade-in alias selects fade" "$output" "transition=fade"
+
+probe_bin="$tmp_dir/probe-bin"
+mkdir -p "$probe_bin"
+cat >"$probe_bin/ffprobe" <<'FAKE_FFPROBE'
+#!/usr/bin/env bash
+printf 'codec_name=h264\npix_fmt=yuv444p\n'
+FAKE_FFPROBE
+chmod +x "$probe_bin/ffprobe"
+mov_file="$tmp_dir/h264-444.mov"
+touch "$mov_file"
+output="$(PATH="$probe_bin:$PATH" $app --dry-run --transition pixelize "$mov_file")"
+assert_contains "selects software decoding for H.264 4:4:4 media" "$output" "hwdec=no"
+assert_not_contains "does not probe incompatible copy-back decoders" "$output" "hwdec=auto-copy-safe"
+
+cat >"$probe_bin/ffprobe" <<'FAKE_FFPROBE'
+#!/usr/bin/env bash
+printf 'codec_name=h264\npix_fmt=yuv420p\n'
+FAKE_FFPROBE
+output="$(PATH="$probe_bin:$PATH" $app --dry-run --transition pixelize "$mov_file")"
+assert_contains "retains hardware decoding for H.264 4:2:0 media" "$output" "hwdec=auto-copy-safe"
 
 output="$($app --dry-run --volume 08 "$media_file")"
 assert_contains "accepts decimal values with a leading zero" "$output" "volume=8"

@@ -3,7 +3,7 @@
 set -uo pipefail
 
 PROGRAM_NAME="${0##*/}"
-PROGRAM_VERSION="1.2.0"
+PROGRAM_VERSION="1.2.1"
 
 usage() {
   cat <<EOF
@@ -77,6 +77,35 @@ is_transition_duration() {
   [[ "$value" =~ [1-9] ]] || return 1
   ((whole < 60)) && return 0
   ((whole == 60)) && [[ -z "$fraction" || ! "$fraction" =~ [1-9] ]]
+}
+
+local_media_needs_software_decode() {
+  local path="$1"
+  local codec=""
+  local pixel_format=""
+  local key value
+
+  while IFS='=' read -r key value; do
+    case "$key" in
+      codec_name) codec="$value" ;;
+      pix_fmt) pixel_format="$value" ;;
+    esac
+  done < <(
+    ffprobe -v error -select_streams v:0 \
+      -show_entries stream=codec_name,pix_fmt \
+      -of default=noprint_wrappers=1:nokey=0 \
+      -- "$path" 2>/dev/null
+  )
+
+  # H.264 hardware decoders are generally limited to 8-bit 4:2:0. Asking mpv
+  # to auto-probe them for 4:2:2, 4:4:4, or high-bit-depth input produces a
+  # page of errors before its successful software fallback.
+  [[ "$codec" == "h264" ]] || return 1
+  case "$pixel_format" in
+    yuv420p|yuvj420p|nv12) return 1 ;;
+    "") return 1 ;;
+    *) return 0 ;;
+  esac
 }
 
 write_transition_cleanup_script() {
@@ -296,11 +325,14 @@ is_transition_duration "$transition_duration" || \
 require_command mpvpaper
 require_command flock
 
+source_is_web="false"
 if [[ "$source_arg" =~ ^https?:// ]]; then
   source="$source_arg"
+  source_is_web="true"
   require_command yt-dlp
 else
   [[ -f "$source_arg" ]] || fail "local media file not found: $source_arg"
+  require_command ffprobe
   source="$(realpath -- "$source_arg")" || fail "could not resolve local media path: $source_arg"
 fi
 
@@ -310,6 +342,10 @@ if ((dim > 0)) || [[ "$transition" != "none" ]]; then
   # Copy-back keeps hardware decoding enabled for formats such as YouTube AV1
   # while making those frames available to the filters.
   hwdec_mode="auto-copy-safe"
+fi
+
+if [[ "$source_is_web" == "false" ]] && local_media_needs_software_decode "$source"; then
+  hwdec_mode="no"
 fi
 
 mpv_options=(
