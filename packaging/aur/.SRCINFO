@@ -1,6 +1,6 @@
 pkgbase = omarchy-motion
 	pkgdesc = Chrome-free video wallpapers with audio for Omarchy
-	pkgver = 1.0.0
+	pkgver = 1.1.0
 	pkgrel = 1
 	url = https://github.com/ryrobes/omarchy-motion
 	arch = any
@@ -11,7 +11,7 @@ pkgbase = omarchy-motion
 	depends = sed
 	depends = util-linux
 	depends = yt-dlp
-	source = omarchy-motion-1.0.0.tar.gz::https://github.com/ryrobes/omarchy-motion/releases/download/v1.0.0/omarchy-motion-1.0.0.tar.gz
-	sha256sums = 930544e3a8f513b4224ac5c454df9cb934df3f0de188281628b55a0aabfad1a8
+	source = omarchy-motion-1.1.0.tar.gz::https://github.com/ryrobes/omarchy-motion/releases/download/v1.1.0/omarchy-motion-1.1.0.tar.gz
+	sha256sums = b4b7536968a1e0e5df150885846899dd5fb9fdfd1f545b249f3601e4e16abcec
 
 pkgname = omarchy-motion

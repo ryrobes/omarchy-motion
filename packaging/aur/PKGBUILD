@@ -1,5 +1,5 @@
 pkgname=omarchy-motion
-pkgver=1.0.0
+pkgver=1.1.0
 pkgrel=1
 pkgdesc="Chrome-free video wallpapers with audio for Omarchy"
 arch=('any')
@@ -7,7 +7,7 @@ url="https://github.com/ryrobes/omarchy-motion"
 license=('MIT')
 depends=('bash' 'coreutils' 'mpvpaper' 'sed' 'util-linux' 'yt-dlp')
 source=("$pkgname-$pkgver.tar.gz::$url/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz")
-sha256sums=('930544e3a8f513b4224ac5c454df9cb934df3f0de188281628b55a0aabfad1a8')
+sha256sums=('b4b7536968a1e0e5df150885846899dd5fb9fdfd1f545b249f3601e4e16abcec')
 
 package() {
   cd "$pkgname-$pkgver"
