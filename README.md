@@ -11,13 +11,28 @@ When the process exits, the existing background is visible again immediately.
 
 ## Install
 
-### Arch User Repository
+### Local package build with yay
 
-Once the AUR package is available:
+Until `omarchy-motion` can be uploaded to the AUR, install it directly from
+this repository. `yay` resolves the dependencies, builds the checked-in
+`PKGBUILD`, and installs the resulting package through pacman:
 
 ```bash
-yay -S omarchy-motion
+git clone https://github.com/ryrobes/omarchy-motion.git
+cd omarchy-motion
+yay -Bi packaging/aur
 ```
+
+To update later, pull the latest packaging metadata and build it again:
+
+```bash
+cd omarchy-motion
+git pull --ff-only
+yay -Bi packaging/aur
+```
+
+This is still a normal tracked Arch package: inspect it with `pacman -Qi
+omarchy-motion` and remove it with `omarchy pkg drop omarchy-motion`.
 
 ### From source
 
@@ -41,7 +56,7 @@ omarchy-motion --version
 - `mpv`
 - `yt-dlp` for web video
 
-The AUR package declares these runtime dependencies. For a manual source
+The local package declares these runtime dependencies. For a manual source
 install, they can be installed through Omarchy:
 
 ```bash
